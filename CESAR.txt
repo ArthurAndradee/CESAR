@@ -1,0 +1,107 @@
+;==========================================================================
+; Area Reservada
+
+; Acesso em 16 bits
+		org		hff80
+STACK:
+		daw		[31]		; Area reservada
+IVET:	dw		0			; Vetor de interrupcao
+
+; Acesso em 8 bits
+		dab		[23]
+TIMDT:	db		0		; Base de tempo do timer
+INTS:	db		0		; INTERRUPT STATUS: IP x x x . x x IPStec IPStim
+INTE:	db		0		; INTERRUPT ENABLE: IE x x x . x x IEStec IEStim
+TECST:	db		0		; Status do teclado
+TECDT:	db		0		; Dado do teclado
+VISOR:	dab		[36]	; Portas de acesso ao visor
+
+;==========================================================
+; Programa Principal
+	org		0
+
+; Inicializa o processador e o hardware
+	mov		#STACK,r6
+	
+	clr		INTS			; Reset pedidos de interrupcao
+	clr		TECST			; Reset estado do hardware do teclado
+	mov		#isr,IVET		; Set Interrupt Service Routine
+		
+;----------------------------------------------------------
+; Limpa o visor
+	mov		#36,r0
+	mov		#VISOR,r1
+loop_reset:
+	mov		#' ',(r1)
+	inc		r1
+	sob		r0,loop_reset
+		
+;----------------------------------------------------------
+; Atualiza as informacoes da Tecla no visor.
+main:
+	mov		#-1,Tecla
+	mov		#VISOR,r0
+	mov		#h82,INTE
+loop_main:
+
+	; Pega informacao de "Tecla".
+	; Se for >255, nao ha tecla;
+	; Se for <=255, Tecla contem a tecla digitada.
+	cmp		Tecla,#255
+	bhi		loop_main
+	
+	mov		Tecla,(r0)
+	mov		#-1,Tecla
+	
+	inc		r0
+	tst		r0
+	bne		loop_main
+	
+	mov		#VISOR,r0	;; Reseta visor pra 0 quando vai pra fora
+	br		loop_main
+		
+Tecla:		dw	0
+
+;==========================================================
+; Rotina de INTERRUPCAO
+; So sera chamada se as interrupcoes estiverem habilitadas
+isr:
+	mov		r0,-(r6)	; Salva registradores (nao e necessario salvar o R5)
+	mov		r1,-(r6)
+	mov		r2,-(r6)
+	mov		r3,-(r6)
+	mov		r4,-(r6)
+	mov		r5,-(r6)
+
+	mov		INTS,r0		; Verifica se e INT do TECLADO
+	and		#2,r0
+	beq		ISR2
+	jsr		r7,ISRtec	; Tratamento da INT do TECLADO
+	and		#hFFFD,INTS	; Desliga bit de INT TECLADO
+ISR2:
+
+	mov		(r6)+,r5	; Retorna os registradores da pilha
+	mov		(r6)+,r4
+	mov		(r6)+,r3
+	mov		(r6)+,r2
+	mov		(r6)+,r1
+	mov		(r6)+,r0
+
+	rti					; Return From Interrupt
+
+;----------------------------------------------------------
+; Tratamento das interrupcoes de teclado
+; if (Tecla > 255) {
+;     Tecla = TECDT
+; }
+; TECST = 0
+
+ISRtec:
+	cmp		Tecla,#256
+	bls		ISRtec_1
+	mov		TECDT,Tecla
+ISRtec_1:
+	clr		TECST
+
+ISRtec_Fim:
+	rts		r7
